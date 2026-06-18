@@ -1,206 +1,202 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+
+const API = 'http://localhost:8080/api';
+const PAGE_SIZE = 10;
 
 // students page. add/edit/delete + filters + stats
 export default function App() {
+  const [data, setData] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [search, setSearch] = useState('');
+  const [cls, setCls] = useState('');
+  const [page, setPage] = useState(0);
+  const [classes, setClasses] = useState([]);
+  const [stats, setStats] = useState({ passing: 0, failing: 0 });
+  const [loadError, setLoadError] = useState('');
 
-  const [data, setData] = React.useState([]);
-  const [all, setAll] = React.useState([]);
-  const [search, setSearch] = React.useState("");
-  const [cls, setCls] = React.useState("");
-  const [page, setPage] = React.useState(0);
-  const [total, setTotal] = React.useState(0);
-  const [classes, setClasses] = React.useState([]);
-  const [stats, setStats] = React.useState({});
-  const [showModal, setShowModal] = React.useState(false);
-  const [editing, setEditing] = React.useState(null);
-  const [fName, setFName] = React.useState("");
-  const [fClass, setFClass] = React.useState("");
-  const [fGrade, setFGrade] = React.useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [fName, setFName] = useState('');
+  const [fClass, setFClass] = useState('');
+  const [fGrade, setFGrade] = useState('');
+  const [saveError, setSaveError] = useState('');
 
-  React.useEffect(() => {
-    fetch("http://localhost:8080/api/students?page=" + page + "&size=10")
+  // Load the current page of students + the passing/failing stats, using whatever search and class
+  // filter are active. Everything goes through the backend so search, filter and pagination agree.
+  const load = useCallback(() => {
+    const params = new URLSearchParams({ page, size: PAGE_SIZE });
+    if (search) params.set('search', search);
+    if (cls) params.set('class', cls);
+
+    fetch(`${API}/students?${params}`)
       .then(r => r.json())
       .then(d => {
-        console.log("got", d);
         setData(d.data);
-        setAll(d.data);
         setTotal(d.total);
-      });
-    fetch("http://localhost:8080/api/classes")
-      .then(r => r.json())
-      .then(d => { setClasses(d); });
-    fetch("http://localhost:8080/api/stats/passing")
-      .then(r => r.json())
-      .then(d => { console.log("stats", d); setStats(d); });
-  }, [page]);
+        setLoadError('');
+      })
+      .catch(() => setLoadError('Could not load students. Is the backend running?'));
 
-  function doSearch(v) {
+    fetch(`${API}/stats/passing${cls ? `?class=${encodeURIComponent(cls)}` : ''}`)
+      .then(r => r.json())
+      .then(setStats)
+      .catch(() => {});
+  }, [page, search, cls]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Class list for the dropdown only changes when students are added/removed, but loading it once is fine.
+  useEffect(() => {
+    fetch(`${API}/classes`)
+      .then(r => r.json())
+      .then(setClasses)
+      .catch(() => {});
+  }, []);
+
+  function onSearchChange(v) {
     setSearch(v);
-    // filter on client
-    var x = [];
-    for (var i = 0; i < all.length; i++) {
-      if (all[i].fullName.toLowerCase().indexOf(v.toLowerCase()) != -1) {
-        if (cls == "" || all[i].className == cls) {
-          x.push(all[i]);
-        }
-      }
-    }
-    setData(x);
+    setPage(0); // a new search starts from the first page
   }
 
-  function doClass(v) {
+  function onClassChange(v) {
     setCls(v);
-    fetch("http://localhost:8080/api/students?class=" + v + "&search=" + search + "&page=0&size=10")
-      .then(r => r.json())
-      .then(d => {
-        console.log("got2", d);
-        setData(d.data);
-        setTotal(d.total);
-      });
-    fetch("http://localhost:8080/api/stats/passing?class=" + v)
-      .then(r => r.json())
-      .then(d => { setStats(d); });
+    setPage(0);
   }
 
   function openAdd() {
-    setEditing(null);
-    setFName("");
-    setFClass("");
-    setFGrade("");
+    setEditingId(null);
+    setFName('');
+    setFClass('');
+    setFGrade('');
+    setSaveError('');
     setShowModal(true);
   }
 
   function openEdit(s) {
-    setEditing(s.id);
+    setEditingId(s.id);
     setFName(s.fullName);
     setFClass(s.className);
-    setFGrade(s.averageGrade);
+    setFGrade(String(s.averageGrade));
+    setSaveError('');
     setShowModal(true);
   }
 
-  function save() {
-    if (editing == null) {
-      fetch("http://localhost:8080/api/students", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName: fName, className: fClass, averageGrade: fGrade })
-      })
-        .then(r => r.json())
-        .then(d => {
-          console.log("created", d);
-          setShowModal(false);
-          setPage(0);
-          // reload
-          fetch("http://localhost:8080/api/students?page=0&size=10")
-            .then(r => r.json())
-            .then(d => { setData(d.data); setAll(d.data); setTotal(d.total); });
-        });
-    } else {
-      fetch("http://localhost:8080/api/students/" + editing, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName: fName, className: fClass, averageGrade: fGrade })
-      })
-        .then(r => r.json())
-        .then(d => {
-          console.log("updated", d);
-          setShowModal(false);
-          fetch("http://localhost:8080/api/students?page=" + page + "&size=10")
-            .then(r => r.json())
-            .then(d => { setData(d.data); setAll(d.data); setTotal(d.total); });
-        });
+  async function save() {
+    setSaveError('');
+    const isEdit = editingId != null;
+    const body = JSON.stringify({ fullName: fName, className: fClass, averageGrade: fGrade });
+
+    try {
+      const res = await fetch(`${API}/students${isEdit ? `/${editingId}` : ''}`, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setSaveError(err.message || 'Could not save. Please check the fields.');
+        return;
+      }
+      setShowModal(false);
+      load();
+    } catch {
+      setSaveError('Network error. Is the backend running?');
     }
   }
 
   function del(id) {
-    fetch("http://localhost:8080/api/students/" + id, { method: "DELETE" })
-      .then(r => r.text())
-      .then(d => {
-        console.log("deleted", d);
-        // remove from list
-        var x = [];
-        for (var i = 0; i < data.length; i++) {
-          if (data[i].id != id) x.push(data[i]);
-        }
-        setData(x);
-      });
+    if (!window.confirm('Are you sure you want to delete this student?')) return;
+    fetch(`${API}/students/${id}`, { method: 'DELETE' })
+      .then(() => load())
+      .catch(() => setLoadError('Could not delete the student.'));
   }
 
-  return (
-    <div style={{ padding: "20px", fontFamily: "Arial" }}>
-      <h1 style={{ color: "#333" }}>Students</h1>
+  const lastPage = total === 0 ? 0 : Math.ceil(total / PAGE_SIZE) - 1;
 
-      <div style={{ marginBottom: "10px" }}>
+  return (
+    <div style={{ padding: '20px', fontFamily: 'Arial' }}>
+      <h1 style={{ color: '#333' }}>Students</h1>
+
+      <div style={{ marginBottom: '10px' }}>
         Passing: {stats.passing} | Failing: {stats.failing}
       </div>
 
+      {loadError && <div style={{ color: 'red', marginBottom: '10px' }}>{loadError}</div>}
+
       <input
-        style={{ padding: "8px", border: "1px solid #ccc", marginRight: "10px" }}
+        style={{ padding: '8px', border: '1px solid #ccc', marginRight: '10px' }}
         placeholder="search..."
         value={search}
-        onChange={e => doSearch(e.target.value)}
+        onChange={e => onSearchChange(e.target.value)}
       />
       <select
-        style={{ padding: "8px", border: "1px solid #ccc", marginRight: "10px" }}
+        style={{ padding: '8px', border: '1px solid #ccc', marginRight: '10px' }}
         value={cls}
-        onChange={e => doClass(e.target.value)}>
+        onChange={e => onClassChange(e.target.value)}>
         <option value="">All classes</option>
-        {classes.map((c, i) => (
-          <option key={i} value={c}>{c}</option>
+        {classes.map(c => (
+          <option key={c} value={c}>{c}</option>
         ))}
       </select>
-      <button style={{ padding: "8px 16px", background: "#1F4E78", color: "#fff", border: "none" }} onClick={openAdd}>
+      <button style={{ padding: '8px 16px', background: '#1F4E78', color: '#fff', border: 'none' }} onClick={openAdd}>
         Add student
       </button>
 
-      <table style={{ marginTop: "20px", width: "100%", borderCollapse: "collapse" }}>
-        <tr style={{ background: "#eee" }}>
-          <td style={{ padding: "8px", border: "1px solid #ccc" }}>ID</td>
-          <td style={{ padding: "8px", border: "1px solid #ccc" }}>Name</td>
-          <td style={{ padding: "8px", border: "1px solid #ccc" }}>Class</td>
-          <td style={{ padding: "8px", border: "1px solid #ccc" }}>Average</td>
-          <td style={{ padding: "8px", border: "1px solid #ccc" }}>Actions</td>
-        </tr>
-        {data.map((s, i) => (
-          <tr key={i} style={{ background: s.averageGrade < 10 ? "#fdd" : "#fff" }}>
-            <td style={{ padding: "8px", border: "1px solid #ccc" }}>{s.id}</td>
-            <td style={{ padding: "8px", border: "1px solid #ccc" }}>{s.fullName}</td>
-            <td style={{ padding: "8px", border: "1px solid #ccc" }}>{s.className}</td>
-            <td style={{ padding: "8px", border: "1px solid #ccc" }}>{s.averageGrade}</td>
-            <td style={{ padding: "8px", border: "1px solid #ccc" }}>
-              <button onClick={() => openEdit(s)}>Edit</button>
-              <button onClick={() => del(s.id)} style={{ marginLeft: "5px" }}>Delete</button>
-            </td>
+      <table style={{ marginTop: '20px', width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: '#eee' }}>
+            <th style={cellStyle}>ID</th>
+            <th style={cellStyle}>Name</th>
+            <th style={cellStyle}>Class</th>
+            <th style={cellStyle}>Average</th>
+            <th style={cellStyle}>Actions</th>
           </tr>
-        ))}
+        </thead>
+        <tbody>
+          {data.map(s => (
+            <tr key={s.id} style={{ background: s.averageGrade < 10 ? '#fdd' : '#fff' }}>
+              <td style={cellStyle}>{s.id}</td>
+              <td style={cellStyle}>{s.fullName}</td>
+              <td style={cellStyle}>{s.className}</td>
+              <td style={cellStyle}>{s.averageGrade}</td>
+              <td style={cellStyle}>
+                <button onClick={() => openEdit(s)}>Edit</button>
+                <button onClick={() => del(s.id)} style={{ marginLeft: '5px' }}>Delete</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
       </table>
 
-      <div style={{ marginTop: "20px" }}>
-        <button onClick={() => setPage(page - 1)}>Prev</button>
-        <span style={{ margin: "0 10px" }}>page {page}</span>
-        <button onClick={() => setPage(page + 1)}>Next</button>
+      <div style={{ marginTop: '20px' }}>
+        <button onClick={() => setPage(page - 1)} disabled={page <= 0}>Prev</button>
+        <span style={{ margin: '0 10px' }}>
+          page {total === 0 ? 0 : page + 1} of {total === 0 ? 0 : lastPage + 1}
+        </span>
+        <button onClick={() => setPage(page + 1)} disabled={page >= lastPage}>Next</button>
       </div>
 
       {showModal && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)" }}>
-          <div style={{ background: "#fff", width: "400px", margin: "100px auto", padding: "20px" }}>
-            <h2>{editing == null ? "Add" : "Edit"} student</h2>
-            <div style={{ marginBottom: "10px" }}>
-              <input style={{ padding: "8px", width: "100%" }} placeholder="name"
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)' }}>
+          <div style={{ background: '#fff', width: '400px', margin: '100px auto', padding: '20px' }}>
+            <h2>{editingId == null ? 'Add' : 'Edit'} student</h2>
+            <div style={{ marginBottom: '10px' }}>
+              <input style={inputStyle} placeholder="name"
                 value={fName} onChange={e => setFName(e.target.value)} />
             </div>
-            <div style={{ marginBottom: "10px" }}>
-              <input style={{ padding: "8px", width: "100%" }} placeholder="class"
+            <div style={{ marginBottom: '10px' }}>
+              <input style={inputStyle} placeholder="class"
                 value={fClass} onChange={e => setFClass(e.target.value)} />
             </div>
-            <div style={{ marginBottom: "10px" }}>
-              <input style={{ padding: "8px", width: "100%" }} placeholder="grade"
+            <div style={{ marginBottom: '10px' }}>
+              <input style={inputStyle} placeholder="grade (0-20)"
                 value={fGrade} onChange={e => setFGrade(e.target.value)} />
             </div>
-            <button onClick={save} style={{ padding: "8px 16px", background: "#1F4E78", color: "#fff", border: "none" }}>
+            {saveError && <div style={{ color: 'red', marginBottom: '10px' }}>{saveError}</div>}
+            <button onClick={save} style={{ padding: '8px 16px', background: '#1F4E78', color: '#fff', border: 'none' }}>
               Save
             </button>
-            <button onClick={() => setShowModal(false)} style={{ marginLeft: "10px", padding: "8px 16px" }}>
+            <button onClick={() => setShowModal(false)} style={{ marginLeft: '10px', padding: '8px 16px' }}>
               Cancel
             </button>
           </div>
@@ -209,3 +205,6 @@ export default function App() {
     </div>
   );
 }
+
+const cellStyle = { padding: '8px', border: '1px solid #ccc' };
+const inputStyle = { padding: '8px', width: '100%', boxSizing: 'border-box' };
