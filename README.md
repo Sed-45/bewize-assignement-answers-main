@@ -77,8 +77,7 @@ How I'm fixing each bug above:
 
 1. Validate the input on the backend and make sure the user gets told what's wrong.
 
-2. Use the total count the backend already returns to work out the last page, and stop Prev/Next at
-   the ends.
+2. Use the total count the backend already returns to work out the last page, and stop Prev/Next at the ends
 
 3. Move search to the backend so it searches every student, not just the current page, and so it
    works together with the class filter and pagination. Drop the browser-side filtering.
@@ -102,3 +101,9 @@ Bigger refactor calls:
   really a product call, I don't want to silently delete them. So i plan to leave them for now and ask how you'd like them handled.
 
 ## What I'd do with more time
+
+- Actually use the two unused features: show a class-average widget on the page, and a single, student view using the get-one endpoint.
+- Let the user choose how many rows to show per page.
+- Cleaner validation: a typed request object with standard annotations instead of the manual checks, I have now.
+- Automated tests for the backend endpoints and the main frontend behaviour, so the fixes don't silently break later.
+- A real database instead of the in-memory list (right now the data resets every time the backend restarts).
