@@ -1,0 +1,13 @@
+# ---- Backend (Maven / Spring Boot) ----
+backend/target/
+
+# ---- Frontend (Node / Vite) ----
+frontend/node_modules/
+frontend/dist/
+
+# ---- Editor / OS ----
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
